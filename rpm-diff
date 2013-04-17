@@ -1,0 +1,130 @@
+#!/usr/bin/python
+# vim: ts=4 sw=4 noet nu
+
+import argparse
+import operator
+import os
+import sys
+
+class PackageCompare:
+	def __init__(self):
+		self.packages     = {}
+		self.files        = []
+		self.max_rpmname  = 0
+		return
+
+	def	do_file( self, f = sys.stdin, name = '{stdin}' ):
+		if len(name) < 2:
+			name = ' ' + name
+		self.files.append( name )
+		for line in f:
+			tokens = line.strip().split()
+			if len(tokens) > 0:
+				rpm = tokens[0]
+				try:
+					self.packages[rpm].append( name )
+				except:
+					self.packages[rpm] = [ name ]
+				self.max_rpmname = max( self.max_rpmname, len(rpm) )
+		return
+
+	def	_name_compactor( self ):
+		self.shorter = {}
+		prefix = os.path.commonprefix( self.files )
+		k = len(prefix)
+		for file in self.files:
+			self.shorter[file] = file[k:]
+		return
+
+	def	report( self, out = sys.stdout ):
+		self.files.sort()
+		self._name_compactor()
+		keys = self.packages.keys()
+		keys.sort()
+		# Print title
+		fmt = '%%-%ds' % self.max_rpmname
+		title = fmt % 'Package Name'
+		for fn in self.files:
+			sfn = self.shorter[fn]
+			fmt = ' %%-%ds' % max( 2, len(sfn) )
+			title += (fmt % sfn)
+		print >>out, title
+		# Print colum headers
+		fmt = '%%-%ds' % self.max_rpmname
+		bars = fmt % ('-' * self.max_rpmname)
+		for fn in self.files:
+			sfn = self.shorter[fn]
+			lsfn = max( 2, len(sfn) )
+			fmt = ' %%-%ds' % lsfn
+			bars += (' ' + '-'*lsfn)
+		print >>out, bars
+		# Go!
+		for package in keys:
+			line = ''
+			fmt = '%%-%ds' % self.max_rpmname
+			line += (fmt % package)
+			content = sorted(self.packages[package])
+			Ncontent = len(content)
+			i = 0
+			for fn in self.files:
+				if (i < Ncontent) and (fn == content[i]):
+					check = 'X'
+					i += 1
+				else:
+					check = ' '
+				n = len(self.shorter[fn])
+				mark = ' ' + (' ' * int((n/2)+0.5)) + check
+				fmt = ' %%-%ds' % n
+				line += fmt % mark
+			print >>out, line
+		# Output legend
+		print >>out
+		s = 'Title Legend'
+		print >>out, s
+		print >>out, '=' * len(s)
+		print >>out
+		for fn in self.files:
+			sfn = self.shorter[fn]
+			print >>out, '%s\t--> %s' % (
+				sfn,
+				fn
+			)
+		return
+
+if __name__ == "__main__":
+	p = argparse.ArgumentParser(
+		description='Compare multiple lists of RPM packages in any order.'
+	)
+	p.add_argument(
+		'-o',
+		'--output',
+		dest='ofile',
+		metavar='DEST',
+		type=str,
+		default=None,
+		help='write output to DEST instead of stdout.'
+	)
+	p.add_argument(
+		'files',
+		type=str,
+		nargs='+',
+		help='List of RPM inventories to be compared.'
+	)
+	args = p.parse_args()
+	pc = PackageCompare()
+	if len(args.files) < 2:
+		print >>sys.stderr, 'Must have at least two input files.'
+		exit(1)
+	for fn in args.files:
+		try:
+			f = open( fn )
+		except:
+			print >>sys.stderr, '%s: cannot open "%s" for reading.' % fn
+			continue
+		pc.do_file( f, fn )
+		f.close()
+	if args.ofile:
+		with open( args.ofile, 'wt' ) as f:
+			pc.report( f )
+	else:
+		pc.report()
